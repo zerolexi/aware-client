@@ -32,6 +32,13 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Random;
+
 /**
  * WiFi Module. Scans and returns surrounding WiFi AccessPoints devices information and RSSI dB values.
  *
@@ -209,7 +216,27 @@ public class WiFi extends Aware_Sensor {
             rowData.put(WiFi_Sensor.BSSID, Encrypter.hashMac(mContext, mWifi.getBSSID()));
             rowData.put(WiFi_Sensor.SSID, Encrypter.hashSsid(mContext, mWifi.getSSID()));
 
+            // Add the signal strength (RSSI) of the current connection
+            int signal_strength = mWifi.getRssi();
+            rowData.put(WiFi_Sensor.SIGNAL_STRENGTH, signal_strength);
+
+            // Get link speed in Mbps
+            int linkSpeed = mWifi.getLinkSpeed();
+            rowData.put(WiFi_Sensor.LINK_SPEED, linkSpeed);
+
+            // Get frequency in MHz
+            int frequency = mWifi.getFrequency();
+            rowData.put(WiFi_Sensor.FREQUENCY, frequency);
+
+            // Measure throughput on current connection
+            double[] throughput = measureWiFiThroughput();
+            rowData.put(WiFi_Sensor.THROUGHPUT_DOWNLOAD, throughput[0]);
+            rowData.put(WiFi_Sensor.THROUGHPUT_UPLOAD, throughput[1]);
+
             try {
+                if (Aware.DEBUG) Log.d(TAG, "WiFi details - Signal Strength: " + signal_strength +
+                        " dBm, Link Speed: " + linkSpeed + " Mbps, Frequency: " + frequency + " MHz");
+
                 mContext.getContentResolver().insert(WiFi_Sensor.CONTENT_URI, rowData);
 
                 Intent currentAp = new Intent(ACTION_AWARE_WIFI_CURRENT_AP);
@@ -225,6 +252,157 @@ public class WiFi extends Aware_Sensor {
             }
 
             return Thread.currentThread().getName();
+        }
+
+        /**
+         * Measure WiFi throughput (download and upload speeds)
+         * @return Array with [downloadMbps, uploadMbps]
+         */
+        private double[] measureWiFiThroughput() {
+            double downloadMbps = 0;
+            double uploadMbps = 0;
+
+            try {
+                // Use a common speed test server or your own server
+                // String testUrl = Aware.getSetting(mContext,
+                //         "wifi_throughput_test_url", "https://speed.cloudflare.com/__down?bytes=1000000");
+                String testUrl = "https://speed.cloudflare.com/__down?bytes=1000000";
+
+                // Measure download speed
+                downloadMbps = measureDownloadSpeed(testUrl);
+
+                // Measure upload speed
+                // String uploadUrl = Aware.getSetting(mContext,
+                //         "wifi_throughput_upload_url", "https://speed.cloudflare.com/__up");
+                String uploadUrl = "https://speed.cloudflare.com/__up";
+                uploadMbps = measureUploadSpeed(uploadUrl);
+
+                if (Aware.DEBUG)
+                    Log.d(TAG, "WiFi throughput - Download: " + downloadMbps +
+                            " Mbps, Upload: " + uploadMbps + " Mbps");
+
+            } catch (Exception e) {
+                if (Aware.DEBUG) Log.e(TAG, "Error measuring WiFi throughput: " + e.getMessage());
+            }
+
+            return new double[] {downloadMbps, uploadMbps};
+        }
+
+        /**
+         * Measure download speed by downloading data from a URL
+         * @param testUrl URL to download data from
+         * @return Download speed in Mbps
+         */
+        private double measureDownloadSpeed(String testUrl) {
+            HttpURLConnection connection = null;
+            InputStream inputStream = null;
+
+            try {
+                // Connect to the test URL
+                URL url = new URL(testUrl);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(10000);
+                connection.connect();
+
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    Log.e(TAG, "HTTP error code: " + connection.getResponseCode());
+                    return 0;
+                }
+
+                // Start timing
+                long startTime = System.currentTimeMillis();
+
+                // Download data
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalBytesRead = 0;
+
+                inputStream = connection.getInputStream();
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    totalBytesRead += bytesRead;
+                }
+
+                // Calculate speed
+                long endTime = System.currentTimeMillis();
+                double durationSeconds = (endTime - startTime) / 1000.0;
+                double speedBps = (totalBytesRead * 8) / durationSeconds;
+                double speedMbps = speedBps / (1024 * 1024);
+
+                return speedMbps;
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error measuring download speed: " + e.getMessage());
+                return 0;
+            } finally {
+                try {
+                    if (inputStream != null) inputStream.close();
+                    if (connection != null) connection.disconnect();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing connection: " + e.getMessage());
+                }
+            }
+        }
+
+        /**
+         * Measure upload speed by uploading data to a server
+         * @param uploadUrl URL to upload data to
+         * @return Upload speed in Mbps
+         */
+        private double measureUploadSpeed(String uploadUrl) {
+            HttpURLConnection connection = null;
+            OutputStream outputStream = null;
+
+            try {
+                // Connect to the test URL
+                URL url = new URL(uploadUrl);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(10000);
+                connection.connect();
+
+                // Generate random data to upload (1MB)
+                byte[] data = new byte[1 * 1024 * 1024];
+                new Random().nextBytes(data);
+
+                // Start timing
+                long startTime = System.currentTimeMillis();
+
+                // Upload data
+                outputStream = connection.getOutputStream();
+                outputStream.write(data);
+                outputStream.flush();
+
+                // We need to get the response to complete the request
+                InputStream in = connection.getInputStream();
+                byte[] buffer = new byte[1024];
+                while (in.read(buffer) != -1) {
+                    // Just consume the response
+                }
+                in.close();
+
+                // Calculate speed
+                long endTime = System.currentTimeMillis();
+                double durationSeconds = (endTime - startTime) / 1000.0;
+                double speedBps = (data.length * 8) / durationSeconds;
+                double speedMbps = speedBps / (1024 * 1024);
+
+                return speedMbps;
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error measuring upload speed: " + e.getMessage());
+                return 0;
+            } finally {
+                try {
+                    if (outputStream != null) outputStream.close();
+                    if (connection != null) connection.disconnect();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing connection: " + e.getMessage());
+                }
+            }
         }
     }
 

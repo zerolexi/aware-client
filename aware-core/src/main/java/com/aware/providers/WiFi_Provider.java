@@ -27,7 +27,7 @@ import java.util.HashMap;
  */
 public class WiFi_Provider extends ContentProvider {
 
-    public static final int DATABASE_VERSION = 6;
+    public static final int DATABASE_VERSION = 7;
 
     /**
      * Authority of WiFi content provider
@@ -59,6 +59,11 @@ public class WiFi_Provider extends ContentProvider {
         public static final String MAC_ADDRESS = "mac_address";
         public static final String BSSID = "bssid";
         public static final String SSID = "ssid";
+        public static final String THROUGHPUT_DOWNLOAD = "throughput_download";
+        public static final String THROUGHPUT_UPLOAD = "throughput_upload";
+        public static final String FREQUENCY = "frequency";
+        public static final String SIGNAL_STRENGTH = "signal_strength";
+        public static final String LINK_SPEED = "link_speed";
     }
 
     /**
@@ -106,7 +111,13 @@ public class WiFi_Provider extends ContentProvider {
                     + WiFi_Sensor.DEVICE_ID + " text default '',"
                     + WiFi_Sensor.MAC_ADDRESS + " text default '',"
                     + WiFi_Data.SSID + " text default '',"
-                    + WiFi_Data.BSSID + " text default ''"};
+                    + WiFi_Data.BSSID + " text default '',"
+                    + WiFi_Sensor.THROUGHPUT_DOWNLOAD + " real default 0,"
+                    + WiFi_Sensor.THROUGHPUT_UPLOAD + " real default 0,"
+                    + WiFi_Sensor.FREQUENCY + " integer default 0,"
+                    + WiFi_Sensor.SIGNAL_STRENGTH + " integer default 0,"
+                    + WiFi_Sensor.LINK_SPEED + " integer default 0"
+    };
 
     private UriMatcher sUriMatcher = null;
     private HashMap<String, String> wifiDataMap = null;
@@ -255,6 +266,11 @@ public class WiFi_Provider extends ContentProvider {
         wifiDeviceMap.put(WiFi_Sensor.MAC_ADDRESS, WiFi_Sensor.MAC_ADDRESS);
         wifiDeviceMap.put(WiFi_Sensor.BSSID, WiFi_Sensor.BSSID);
         wifiDeviceMap.put(WiFi_Sensor.SSID, WiFi_Sensor.SSID);
+        wifiDeviceMap.put(WiFi_Sensor.THROUGHPUT_DOWNLOAD, WiFi_Sensor.THROUGHPUT_DOWNLOAD);
+        wifiDeviceMap.put(WiFi_Sensor.THROUGHPUT_UPLOAD, WiFi_Sensor.THROUGHPUT_UPLOAD);
+        wifiDeviceMap.put(WiFi_Sensor.FREQUENCY, WiFi_Sensor.FREQUENCY);
+        wifiDeviceMap.put(WiFi_Sensor.SIGNAL_STRENGTH, WiFi_Sensor.SIGNAL_STRENGTH);
+        wifiDeviceMap.put(WiFi_Sensor.LINK_SPEED, WiFi_Sensor.LINK_SPEED);
 
         return true;
     }
@@ -301,7 +317,7 @@ public class WiFi_Provider extends ContentProvider {
      */
     @Override
     public synchronized int update(Uri uri, ContentValues values, String selection,
-                      String[] selectionArgs) {
+                                   String[] selectionArgs) {
 
         initialiseDatabase();
 
